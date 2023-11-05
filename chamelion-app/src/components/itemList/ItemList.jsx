@@ -9,6 +9,7 @@ import {
   SelectionMode,
 } from '@fluentui/react/lib/DetailsList';
 import { MarqueeSelection } from '@fluentui/react/lib/MarqueeSelection';
+import { useBoolean, useConst, useForceUpdate } from '@fluentui/react-hooks';
 import { mergeStyleSets } from '@fluentui/react/lib/Styling';
 import { filterAllCharacters, fetchAllMetadata } from '../../service/apiService';
 import ItemsPerPageControl from './ItemsPerPageControl';
@@ -62,6 +63,7 @@ const ItemList = () => {
   // State hooks related to the component's data
   const [items, setItems] = useState([]);
   const [originalItems, setOriginalItems] = useState([]);
+  const [fullData, setFullData] = useState([]);
   const [columns, setColumns] = useState([]);
   const [metadata, setMetadata] = useState({});
 
@@ -81,92 +83,15 @@ const ItemList = () => {
   const [announcedMessage, setAnnouncedMessage] = useState('');
   const [isFilterActive, setIsFilterActive] = useState(false);
 
+  const forceUpdate = useForceUpdate();
+
+  //original fetch
   useEffect(() => {
-    const columns = [
-      {
-        key: 'column1',
-        name: 'Name',
-        fieldName: 'name',
-        minWidth: 210,
-        maxWidth: 350,
-        isRowHeader: true,
-        isResizable: true,
-        isSorted: true,
-        isSortedDescending: false,
-        sortAscendingAriaLabel: 'Sorted A to Z',
-        sortDescendingAriaLabel: 'Sorted Z to A',
-        onColumnClick: _onColumnClick,
-        data: 'string',
-        isPadded: true,
-      },
-      {
-        key: 'column2',
-        name: 'ID',
-        fieldName: 'id',
-        minWidth: 210,
-        maxWidth: 350,
-        isRowHeader: true,
-        isResizable: true,
-        isSorted: true,
-        isSortedDescending: false,
-        sortAscendingAriaLabel: 'Sorted A to Z',
-        sortDescendingAriaLabel: 'Sorted Z to A',
-        onColumnClick: _onColumnClick,
-        data: 'string',
-        isPadded: true,
-      },
-      {
-        key: 'column3',
-        name: 'Status',
-        fieldName: 'status',
-        minWidth: 70,
-        maxWidth: 90,
-        isResizable: true,
-        onColumnClick: _onColumnClick,
-        data: 'number',
-        onRender: (item) => {
-          return <span>{item.status}</span>;
-        },
-        isPadded: true,
-      },
-      {
-        key: 'column4',
-        name: 'Species',
-        fieldName: 'species',
-        minWidth: 70,
-        maxWidth: 90,
-        isResizable: true,
-        isCollapsible: true,
-        data: 'string',
-        onColumnClick: _onColumnClick,
-        onRender: (item) => {
-          return <span>{item.species}</span>;
-        },
-        isPadded: true,
-      },
-      {
-        key: 'column5',
-        name: 'Origin',
-        fieldName: 'origin',
-        minWidth: 70,
-        maxWidth: 90,
-        isResizable: true,
-        isCollapsible: true,
-        data: 'string',
-        onColumnClick: _onColumnClick,
-        onRender: (item) => {
-          return <span>{item.origin}</span>;
-        },
-      },
-    ];
-
-    setColumns(columns);
-
     // Fetch and set items from the API or props
     const fetchData = async () => {
       try {
         let apiData = await filterAllCharacters('');
-        
+        setFullData(apiData);
         // Calculate the start and end indices for slicing
         const startIndex = (selectedPageIndex) * parseInt(itemsPerPage);
         let endIndex = startIndex + parseInt(itemsPerPage);
@@ -176,16 +101,16 @@ const ItemList = () => {
           endIndex = totalItems;
         }
 
-        apiData = apiData.slice(startIndex, endIndex);
+        const slicedApiData = apiData.slice(startIndex, endIndex);
 
         console.log("---before apidata-----")
         console.log(items)
-        setItems(apiData);
+        setItems([...slicedApiData]);
 
         console.log("---after apidata-----")
         console.log(items)
 
-        setOriginalItems(apiData);
+        setOriginalItems([...slicedApiData]);
 
         const response = await fetchAllMetadata(selectedPageIndex);
         const itemsMetadata = {
@@ -195,44 +120,192 @@ const ItemList = () => {
         console.log(itemsMetadata)
 
         setMetadata(itemsMetadata);
+
+        const onColumnClicked = (ev, column) => {
+          //clear select
+          setIsModalSelection(false);
+          setSelectedPageIndex(0);
+          const newColumns = listColumns.map((newCol) => {
+            if (newCol.key === column.key) {
+              newCol.isSortedDescending = !newCol.isSortedDescending;
+              newCol.isSorted = true;
+              setAnnouncedMessage(
+                `${newCol.name} is sorted ${
+                  newCol.isSortedDescending ? 'descending' : 'ascending'
+                }`
+              );
+            } else {
+              newCol.isSorted = false;
+              newCol.isSortedDescending = true;
+            }
+            return newCol;
+          });
+      
+          console.log("---sort items-----")
+          console.log(items.length)
+      
+          const newItems = _copyAndSort(
+            apiData,
+            column.fieldName,
+            column.isSortedDescending
+          );
+
+          // Calculate the start and end indices for slicing
+          const startIndex = (selectedPageIndex) * parseInt(itemsPerPage);
+          let endIndex = startIndex + parseInt(itemsPerPage);
+
+          const totalItems = newItems.length;
+          if (endIndex > totalItems) {
+            endIndex = totalItems;
+          }
+
+          const slicedApiData = newItems.slice(startIndex, endIndex);
+
+          setFullData([...newItems]);
+          setColumns([...newColumns]);
+          setItems([...slicedApiData]);
+        }
+
+        const listColumns = [
+          {
+            key: 'column1',
+            name: 'Name',
+            fieldName: 'name',
+            minWidth: 210,
+            maxWidth: 350,
+            isRowHeader: true,
+            isResizable: true,
+            isSorted: true,
+            isSortedDescending: false,
+            sortAscendingAriaLabel: 'Sorted A to Z',
+            sortDescendingAriaLabel: 'Sorted Z to A',
+            onColumnClick: onColumnClicked,
+            data: 'string',
+            isPadded: true,
+          },
+          {
+            key: 'column2',
+            name: 'ID',
+            fieldName: 'id',
+            minWidth: 210,
+            maxWidth: 350,
+            isRowHeader: true,
+            isResizable: true,
+            isSorted: true,
+            isSortedDescending: false,
+            sortAscendingAriaLabel: 'Sorted A to Z',
+            sortDescendingAriaLabel: 'Sorted Z to A',
+            onColumnClick: onColumnClicked,
+            data: 'string',
+            isPadded: true,
+          },
+          {
+            key: 'column3',
+            name: 'Status',
+            fieldName: 'status',
+            minWidth: 70,
+            maxWidth: 90,
+            isResizable: true,
+            onColumnClick: onColumnClicked,
+            data: 'number',
+            onRender: (item) => {
+              return <span>{item.status}</span>;
+            },
+            isPadded: true,
+          },
+          {
+            key: 'column4',
+            name: 'Species',
+            fieldName: 'species',
+            minWidth: 70,
+            maxWidth: 90,
+            isResizable: true,
+            isCollapsible: true,
+            data: 'string',
+            onColumnClick: onColumnClicked,
+            onRender: (item) => {
+              return <span>{item.species}</span>;
+            },
+            isPadded: true,
+          },
+          {
+            key: 'column5',
+            name: 'Origin',
+            fieldName: 'origin',
+            minWidth: 70,
+            maxWidth: 90,
+            isResizable: true,
+            isCollapsible: true,
+            data: 'string',
+            onColumnClick: onColumnClicked,
+            onRender: (item) => {
+              return <span>{item.origin}</span>;
+            },
+          },
+        ];
+    
+        setColumns([...listColumns]);
       } catch (error) {
         console.error('Error fetching data:', error);
       }
     };
     
     fetchData();
-  }, [itemsPerPage, selectedPageIndex]);
+  }, []);
 
-  const _onColumnClick = (ev, column) => {
-    const newColumns = columns.map((newCol) => {
-      if (newCol.key === column.key) {
-        newCol.isSortedDescending = !newCol.isSortedDescending;
-        newCol.isSorted = true;
-        setAnnouncedMessage(
-          `${newCol.name} is sorted ${
-            newCol.isSortedDescending ? 'descending' : 'ascending'
-          }`
-        );
-      } else {
-        newCol.isSorted = false;
-        newCol.isSortedDescending = true;
-      }
-      return newCol;
-    });
 
-    console.log("---sort items-----")
-    console.log(items.length)
+  //page change
+  useEffect(() => {
+    const startIndex = (selectedPageIndex) * parseInt(itemsPerPage);
+        let endIndex = startIndex + parseInt(itemsPerPage);
 
-    const newItems = _copyAndSort(
-      items,
-      column.fieldName,
-      column.isSortedDescending
-    );
+        const totalItems = fullData.length;
+        if (endIndex > totalItems) {
+          endIndex = totalItems;
+        }
 
-    setColumns(newColumns);
-    setItems(newItems);
+        const slicedApiData = fullData.slice(startIndex, endIndex);
+
+        console.log("---before apidata-----")
+        console.log(items)
+        setItems([...slicedApiData]);
+
+        console.log("---after apidata-----")
+        console.log(items)
+
+        setOriginalItems([...slicedApiData]);
+  }, [itemsPerPage, selectedPageIndex])
+
+  // const _onColumnClick = (ev, column) => {
+  //   const newColumns = columns.map((newCol) => {
+  //     if (newCol.key === column.key) {
+  //       newCol.isSortedDescending = !newCol.isSortedDescending;
+  //       newCol.isSorted = true;
+  //       setAnnouncedMessage(
+  //         `${newCol.name} is sorted ${
+  //           newCol.isSortedDescending ? 'descending' : 'ascending'
+  //         }`
+  //       );
+  //     } else {
+  //       newCol.isSorted = false;
+  //       newCol.isSortedDescending = true;
+  //     }
+  //     return newCol;
+  //   });
+
+  //   console.log("---sort items-----")
+  //   console.log(items.length)
+
+  //   const newItems = _copyAndSort(
+  //     items,
+  //     column.fieldName,
+  //     column.isSortedDescending
+  //   );
+
+  //   setColumns(newColumns);
+  //   setItems(newItems);
     
-  };
+  // };
 
   const _copyAndSort = (items, columnKey, isSortedDescending) => {
     const key = columnKey;
@@ -242,8 +315,9 @@ const ItemList = () => {
   };
 
   const _selection = new Selection({
-    onSelectionChanged: () => {
+    onSelectionChanged: (e) => {
       setSelectionDetails(_getSelectionDetails());
+      setItems([...items])
     },
     getKey: _getKey,
   });
@@ -255,6 +329,9 @@ const ItemList = () => {
   const _getSelectionDetails = () => {
     const selectionCount = _selection.getSelectedCount();
 
+    console.log(selectionCount)
+    console.log(_selection.getSelection())
+    console.log(_selection)
     switch (selectionCount) {
       case 0:
         return 'No items selected';
@@ -270,7 +347,7 @@ const ItemList = () => {
 
     try {
       const filteredItems = await filterAllCharacters(text);
-      setItems(isFilterActive ? originalItems : filteredItems);
+      setItems(isFilterActive ? [...originalItems] : [...filteredItems]);
     } catch (error) {
       console.error('Error fetching data:', error);
     }
